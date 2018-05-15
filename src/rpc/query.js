@@ -326,3 +326,19 @@ export const queryRPC = (url, req, config = {}) => {
     return response.data
   })
 }
+
+export const selectRpcsWithLatencyCheck = (rpcs, latency) => {
+  return new Promise((resolve, reject) => {
+    if (!rpcs || rpcs.length <= 1) {
+      reject(new Error('please provide more than 1 rpc'))
+    }
+    let endpoints = []
+    rpcs.forEach(rpc => {
+      queryRPC(rpc, { method: 'getblockcount', id: rpc })
+        .then(res => {
+          endpoints.push(res)
+        })
+    })
+    setTimeout(resolve, latency, endpoints)
+  })
+}

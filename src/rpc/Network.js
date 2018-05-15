@@ -1,6 +1,8 @@
 import Protocol from './Protocol'
 import fs from 'fs'
 import logger from '../logging'
+import { selectRpcsWithLatencyCheck } from './query'
+import networks from '../../src/networks.json'
 
 const log = logger('protocol')
 
@@ -9,24 +11,44 @@ const log = logger('protocol')
  * @param {NetworkLike} config - NetworkLike JS object
  */
 export default class Network {
-  constructor (config = {}, name = null) {
-    this.name = config.Name || config.name || name || 'RandomNet'
-    if (name) this.name = name
+  constructor (config = {}, net = null) {
+    this.net = config.net || config.net || net || 'RandomNet'
+    if (net) this.net = net
     let protocolLike = config.protocol || config.ProtocolConfiguration || {}
     this.protocol = new Protocol(protocolLike)
     this.nodes = config.Nodes || config.nodes || []
     this.extra = config.ExtraConfiguration || config.extra || {}
+    this.getBestRPCEndpoint = this.getBestRPCEndpoint
+  }
+
+  /**
+   * Select best rpc endpoint from rpc list with a latency check.
+   * @param {integer} maxLatency
+   * @return {string} selected best rpc endpoint
+   */
+  getBestRPCEndpoint (maxLatency = 2000) {
+    return new Promise((resolve, reject) => {
+      const network = networks[this.net]
+      const rpcs = network
+        ? network.ProtocolConfiguration.SeedList
+        : this.extra.rpcs
+      return Promise
+        .resolve(selectRpcsWithLatencyCheck(rpcs, maxLatency))
+        .then(selectedRpcs => selectedRpcs.sort((a, b) => a.result + b.result)[0])
+        .then(selectedRpc => resolve(selectedRpc.id))
+        .catch(error => reject(error))
+    })
   }
 
   /**
    * Imports a json object or string. Overrides the network name with the given name if provided.
    * @param {object|string} jsonLike
-   * @param {string} [name]
+   * @param {string} [net]
    * @return {Network}
    */
-  static import (jsonLike, name = null) {
+  static import (jsonLike, net = null) {
     const jsonObj = typeof (jsonString) === 'string' ? JSON.parse(jsonLike) : jsonLike
-    return new Network(jsonObj, name)
+    return new Network(jsonObj, net)
   }
 
   /**
