@@ -1,6 +1,24 @@
+import axios from 'axios'
 import Protocol from './Protocol'
 import fs from 'fs'
 import logger from '../logging'
+import { queryRPC } from './query'
+
+const latencyCheck = (axiosCalls, maxLatency) => {
+  return new Promise((resolve, reject) => {
+    let rpcs = []
+    axiosCalls.forEach(axiosCall => {
+      axiosCall.then(res => {
+        rpcs.push(res)
+      }).catch(() => '')
+    })
+    setTimeout(resolve, maxLatency, rpcs)
+  })
+}
+
+const selectHighestResult = (rpcs) => {
+  return rpcs.sort((a, b) => b.result - a.result)[0]
+}
 
 const log = logger('protocol')
 
@@ -57,6 +75,28 @@ export default class Network {
       ExtraConfiguration: this.extra,
       Nodes: this.nodes
     }
+  }
+
+  getBestRPCEndpoint ({ maxLatency = 4000 }) {
+    const fetchingRpcList = () => {
+      const mainNetJsonEndpoint = 'https://raw.githubusercontent.com/CityOfZion/neo-mon/master/docs/assets/mainnet.json'
+      const testNetJsonEndpoint = 'https://raw.githubusercontent.com/CityOfZion/neo-mon/master/docs/assets/testnet.json'
+      return new Promise((resolve) => {
+        if (this.extra.rpcs) {
+          resolve(this.extra.rpcs)
+        }
+        axios
+          .get(this.name === 'TestNet' ? mainNetJsonEndpoint : testNetJsonEndpoint)
+          .then(response => response.data.sites.filter(r => r.type === 'RPC'))
+          .then(rpcs => rpcs.map(rpc => rpc.protocol + '://' + rpc.url))
+          .then(urls => resolve(urls))
+      })
+    }
+    return fetchingRpcList()
+      .then(urls => urls.map(url => queryRPC(url, { id: url })))
+      .then(rpcs => latencyCheck(rpcs, maxLatency))
+      .then(rpcs => selectHighestResult(rpcs))
+      .then(bestRpc => bestRpc ? bestRpc.id : null)
   }
 
   /**
